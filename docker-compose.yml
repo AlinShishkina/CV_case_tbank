@@ -1,12 +1,44 @@
 version: '3.8'
 
 services:
-  tbank-detector:
+  tbank-logo-detection:
     build: .
+    container_name: tbank-logo-api
     ports:
       - "8000:8000"
     volumes:
+      - ./data:/app/data
       - ./weights:/app/weights
-    command: >
-      sh -c "python scripts/download_weights.py &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+      - ./logs:/app/logs
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 12G
+        reservations:
+          memory: 4G
+
+  # Дополнительный сервис для мониторинга (опционально)
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=admin
+  #   volumes:
+  #     - ./monitoring/grafana:/var/lib/grafana
+
+volumes:
+  data:
+  weights:
+  logs:
