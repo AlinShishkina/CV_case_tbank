@@ -6,6 +6,9 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Копирование requirements.txt
@@ -17,15 +20,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копирование исходного кода
 COPY app/ ./app/
 COPY scripts/ ./scripts/
+COPY data/ ./data/
 
-# Создание директории для весов
+# Создание директорий
 RUN mkdir -p weights
 
-# Загрузка весов модели (будет выполнена при запуске контейнера)
-# Можно раскомментировать для предварительной загрузки:
-# RUN python scripts/download_weights.py
+# Загрузка YOLOv8n весов
+RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt'); print('YOLOv8n веса успешно загружены')"
 
-# Открытие порта
 EXPOSE 8000
 
 # Запуск приложения
