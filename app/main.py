@@ -1,10 +1,10 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
-from typing import List
+from pydantic import BaseModel, Field
+from typing import List, Optional
 import cv2
 import numpy as np
-from .model import LogoDetector
-from .utils import decode_image, validate_image_format
+from app.model import LogoDetector
+from app.utils import decode_image, validate_image_format
 import logging
 import time
 
@@ -17,10 +17,37 @@ app = FastAPI(title="T-Bank Logo Detection API", version="1.0.0")
 # Инициализация детектора
 detector = LogoDetector()
 
-@app.post("/detect", response_model=DetectionResponse)
+# Модели ответов
+class BoundingBox(BaseModel):
+    """Абсолютные координаты BoundingBox"""
+    x_min: int = Field(..., description="Левая координата", ge=0)
+    y_min: int = Field(..., description="Верхняя координата", ge=0)
+    x_max: int = Field(..., description="Правая координата", ge=0)
+    y_max: int = Field(..., description="Нижняя координата", ge=0)
+
+class Detection(BaseModel):
+    """Результат детекции одного логотипа"""
+    bbox: BoundingBox = Field(..., description="Результат детекции")
+
+class DetectionResponse(BaseModel):
+    """Ответ API с результатами детекции"""
+    detections: List[Detection] = Field(..., description="Список найденных логотипов")
+
+class ErrorResponse(BaseModel):
+    """Ответ при ошибке"""
+    error: str = Field(..., description="Описание ошибки")
+    detail: Optional[str] = Field(None, description="Дополнительная информация")
+
+@app.post("/detect", response_model=DetectionResponse, responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}})
 async def detect_logo(file: UploadFile = File(...)):
     """
     Детекция логотипа Т-банка на изображении
+
+    Args:
+        file: Загружаемое изображение (JPEG, PNG, BMP, WEBP)
+
+    Returns:
+        DetectionResponse: Результаты детекции с координатами найденных логотипов
     """
     start_time = time.time()
     
@@ -39,15 +66,30 @@ async def detect_logo(file: UploadFile = File(...)):
         if image is None:
             raise HTTPException(status_code=400, detail="Не удалось декодировать изображение")
         
+        # Проверка времени обработки
+        if time.time() - start_time > 8:
+            raise HTTPException(status_code=500, detail="Превышено время обработки")
+        
         # Детекция логотипов
-        detections = detector.detect(image)
+        detections, processing_time = detector.detect(image)
         
-        # Форматирование результата
-        response = DetectionResponse(detections=detections)
+        # Преобразование в формат ответа
+        response_detections = []
+        for detection in detections:
+            bbox = BoundingBox(
+                x_min=detection["x_min"],
+                y_min=detection["y_min"],
+                x_max=detection["x_max"],
+                y_max=detection["y_max"]
+            )
+            response_detections.append(Detection(bbox=bbox))
         
-        logger.info(f"Обработка заняла {time.time() - start_time:.2f} секунд")
-        return response
+        logger.info(f"Обработка заняла {processing_time:.2f} секунд, найдено {len(response_detections)} логотипов")
         
+        return DetectionResponse(detections=response_detections)
+        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Ошибка при обработке изображения: {str(e)}")
         raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
@@ -55,7 +97,7 @@ async def detect_logo(file: UploadFile = File(...)):
 @app.get("/health")
 async def health_check():
     """Проверка работоспособности сервиса"""
-    return {"status": "healthy"}
+    return {"status": "healthy", "model_loaded": detector.model is not None}
 
 if __name__ == "__main__":
     import uvicorn
