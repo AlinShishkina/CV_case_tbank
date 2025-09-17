@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  tbank-detector:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./weights:/app/weights
+    command: >
+      sh -c "python scripts/download_weights.py &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
